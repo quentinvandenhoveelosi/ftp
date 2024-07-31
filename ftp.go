@@ -561,9 +561,9 @@ func (c *ServerConn) openDataConn() (net.Conn, error) {
 		return nil, err
 	}
 
-	// if c.options.isLocalPassiveMode {
-	// 	host = c.host
-	// }
+	if c.options.isLocalPassiveMode {
+		host = c.host
+	}
 
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
 	if c.options.dialFunc != nil {
