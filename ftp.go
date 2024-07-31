@@ -72,19 +72,20 @@ type DialOption struct {
 
 // dialOptions contains all the options set by DialOption.setup
 type dialOptions struct {
-	context         context.Context
-	dialer          net.Dialer
-	tlsConfig       *tls.Config
-	explicitTLS     bool
-	disableEPSV     bool
-	disableUTF8     bool
-	disableMLSD     bool
-	writingMDTM     bool
-	forceListHidden bool
-	location        *time.Location
-	debugOutput     io.Writer
-	dialFunc        func(network, address string) (net.Conn, error)
-	shutTimeout     time.Duration // time to wait for data connection closing status
+	context            context.Context
+	dialer             net.Dialer
+	tlsConfig          *tls.Config
+	explicitTLS        bool
+	disableEPSV        bool
+	disableUTF8        bool
+	disableMLSD        bool
+	writingMDTM        bool
+	forceListHidden    bool
+	isLocalPassiveMode bool
+	location           *time.Location
+	debugOutput        io.Writer
+	dialFunc           func(network, address string) (net.Conn, error)
+	shutTimeout        time.Duration // time to wait for data connection closing status
 }
 
 // Entry describes a file and is returned by List().
@@ -183,6 +184,12 @@ func Dial(addr string, options ...DialOption) (*ServerConn, error) {
 func DialWithTimeout(timeout time.Duration) DialOption {
 	return DialOption{func(do *dialOptions) {
 		do.dialer.Timeout = timeout
+	}}
+}
+
+func DialWithLocalPassiveMode(localPassiveMode bool) DialOption {
+	return DialOption{func(do *dialOptions) {
+		do.isLocalPassiveMode = localPassiveMode
 	}}
 }
 
@@ -528,24 +535,7 @@ func (c *ServerConn) pasv() (host string, port int, err error) {
 
 	// Make the IP address to connect to
 	host = strings.Join(pasvData[0:4], ".")
-
-	if c.host != host {
-		if cmdIP := net.ParseIP(c.host); cmdIP != nil {
-			if dataIP := net.ParseIP(host); dataIP != nil {
-				if isBogusDataIP(cmdIP, dataIP) {
-					return c.host, port, nil
-				}
-			}
-		}
-	}
 	return host, port, nil
-}
-
-func isBogusDataIP(cmdIP, dataIP net.IP) bool {
-	// Logic stolen from lftp (https://github.com/lavv17/lftp/blob/d67fc14d085849a6b0418bb3e912fea2e94c18d1/src/ftpclass.cc#L769)
-	return dataIP.IsMulticast() ||
-		cmdIP.IsPrivate() != dataIP.IsPrivate() ||
-		cmdIP.IsLoopback() != dataIP.IsLoopback()
 }
 
 // getDataConnPort returns a host, port for a new data connection
@@ -566,9 +556,14 @@ func (c *ServerConn) getDataConnPort() (string, int, error) {
 // openDataConn creates a new FTP data connection.
 func (c *ServerConn) openDataConn() (net.Conn, error) {
 	host, port, err := c.getDataConnPort()
+
 	if err != nil {
 		return nil, err
 	}
+
+	// if c.options.isLocalPassiveMode {
+	// 	host = c.host
+	// }
 
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
 	if c.options.dialFunc != nil {
